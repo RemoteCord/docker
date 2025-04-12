@@ -1,0 +1,137 @@
+version: "3.8"
+
+services:
+  mongodb_container:
+    container_name: mongo_server
+    image: mongo:latest
+    restart: always
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb_data_container:/dump
+    networks:
+      zerotier:
+        aliases:
+         - mongo
+
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.0"
+
+#  dragonfly_master:
+#    restart: always
+#    image: 'docker.dragonflydb.io/dragonflydb/dragonfly'
+#    container_name: dragonfly_master
+#    ulimits:
+#      memlock: -1
+#    ports:
+#      - "6379:6379"
+    # For better performance, consider `host` mode instead `port` to avoid docker NAT.
+    # `host` mode is NOT currently supported in Swarm Mode.
+    # https://docs.docker.com/compose/compose-file/compose-file-v3/#network_mode
+    #network_mode: "host"
+    #environment:
+    #  - DRAGONFLY_PASSWORD=1779
+#    command:
+     # - "--requirepass=1779"
+#      - "--maxmemory=4GB"  # Use up to 75% of total memory
+#      - "--proactor_threads=4"  # Increase based on your CPU cores
+#      - "--cache_mode=true"  # Enable cache optimizations
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: "1.0"  # Allocate 2 CPU cores (adjust based on your system)
+#          memory: "4G"  # Allocate 4GB RAM (adjust as needed)
+#    networks:
+#      zerotier:
+#        aliases:
+#         - dragonfly
+#    volumes:
+#      - dragonflydata:/data
+
+  redis-master:
+    restart: always
+    image: redis:7
+    container_name: redis_master
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis_master:/data
+    networks:
+      zerotier:
+        aliases:
+          - redis-master
+
+  cdn:
+    container_name: cdn_server
+    build:
+      context: ./remotecord-cdn
+      dockerfile: ./Dockerfile
+      args:
+        TARGETOS: linux
+        TARGETARCH: amd64 # Change to arm64 if using an ARM-based syste
+    ports:
+     - "3002:3002"
+    environment:
+      - MODE=debug
+      - PORT=3002
+      - FILE_UPLOAD_LIMIT_MB=1000
+      - HOSTNAME=0.0.0.0
+      - API_URL=https://api2.luqueee.dev
+      - DNS_CDN=https://cdn-remotecord.luqueee.dev
+    volumes:
+      - ./remotecord-cdn/data:/app/data # Optional: Mount a volume if needed
+    restart: always
+    networks:
+      zerotier:
+        aliases:
+          - cdn
+
+  #backend:
+  #  container_name: backend_server
+  #  restart: always
+  #  build:
+  #    context: ./remotecord-backend
+  #    dockerfile: Dockerfile
+
+  #  depends_on:
+  #    - redis
+  #  env_file:
+  #    - ./remotecord-backend/.env
+  #  ports:
+  #    - "3003:3003"
+  #  networks:
+  #    zerotier:
+  #      aliases:
+  #        - backend
+
+  nginx:
+    container_name: nginx_server
+    image: "jc21/nginx-proxy-manager:latest"
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+    networks:
+      zerotier:
+        aliases:
+          - webserver
+
+volumes:
+  couchbase_data:
+  redis_master:
+  redis_slave:
+  mongodb_data_container:
+  dragonflydata:
+    driver: local
+networks:
+  zerotier:
+    external: true
